@@ -1,0 +1,20 @@
+# Core Scrapy dependencies
+scrapy==2.13.4
+pymongo==4.13.0
+brotli==1.2.0
+itemadapter==0.9.0
+python-dotenv==1.0.1
+pyyaml==6.0.2
+
+# AI/ML dependencies (for skill extraction)
+openai==1.57.4
+tenacity==8.5.0
+
+# Vector database
+qdrant-client==1.12.1
+
+# HTTP and networking
+requests==2.32.3
+
+# Airflow dependencies (core Airflow provided by base image)
+apache-airflow-providers-docker==3.14.0

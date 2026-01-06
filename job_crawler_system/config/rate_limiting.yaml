@@ -1,0 +1,77 @@
+# Rate Limiting Configuration
+# File này chứa các thiết lập để tránh bị rate limiting bởi các website
+
+# Global rate limiting settings
+global:
+  # Delay giữa các requests (giây)
+  download_delay: 20
+  # Thêm ngẫu nhiên vào delay để tránh bị detect
+  randomize_download_delay: true
+  # Số request đồng thời tối đa
+  concurrent_requests: 1
+  # Số request đồng thời tối đa cho mỗi domain
+  concurrent_requests_per_domain: 1
+
+# AutoThrottle settings
+autothrottle:
+  enabled: true
+  start_delay: 20  # Delay ban đầu (giây)
+  max_delay: 180   # Delay tối đa (giây)
+  target_concurrency: 0.2  # Mức độ đồng thời mục tiêu (< 1)
+  debug: true  # Log thông tin throttle
+
+# Rate limiting middleware settings
+rate_limit_middleware:
+  # Delay ban đầu khi bị rate limit (giây)
+  base_delay: 60
+  # Delay tối đa khi bị rate limit (giây)
+  max_delay: 600
+  # Số lần retry tối đa
+  max_retry_times: 3
+
+# Domain-specific settings
+domains:
+  topcv.vn:
+    # Cài đặt đặc biệt cho TopCV
+    download_delay: 25
+    max_delay: 300
+    concurrent_requests: 1
+    # Giới hạn trang mỗi lần crawl để tránh rate limiting
+    max_pages_per_run: 5
+    
+  vietnamworks.com:
+    download_delay: 20
+    max_delay: 240
+    concurrent_requests: 1
+    max_pages_per_run: 10
+
+# Retry settings
+retry:
+  enabled: true
+  times: 3
+  http_codes: [500, 502, 503, 504, 408, 429]
+  
+# Proxy settings (nếu cần)
+proxy:
+  enabled: false
+  servers: []
+
+# User agent rotation
+user_agents:
+  enabled: true
+  agents:
+    - 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    - 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+    - 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    - 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    - 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0'
+    - 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15'
+
+# Schedule settings (cho Airflow)
+schedule:
+  # Chạy vào lúc 7 giờ sáng mỗi ngày
+  cron: "0 7 * * *"
+  # Timeout cho toàn bộ process (giờ)
+  timeout: 3
+  # Số trang mặc định mỗi lần chạy
+  default_max_pages: 5

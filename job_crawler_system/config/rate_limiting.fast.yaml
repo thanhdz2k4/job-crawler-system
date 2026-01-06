@@ -1,0 +1,54 @@
+# Fast rate limiting profile for local/dev runs
+global:
+  download_delay: 2
+  randomize_download_delay: true
+  concurrent_requests: 8
+  concurrent_requests_per_domain: 2
+
+autothrottle:
+  enabled: true
+  start_delay: 2
+  max_delay: 60
+  target_concurrency: 1.0
+  debug: false
+
+rate_limit_middleware:
+  base_delay: 10
+  max_delay: 120
+  max_retry_times: 3
+
+domains:
+  topcv.vn:
+    download_delay: 3
+    max_delay: 120
+    concurrent_requests: 2
+    max_pages_per_run: 5
+  vietnamworks.com:
+    download_delay: 2
+    max_delay: 120
+    concurrent_requests: 2
+    max_pages_per_run: 10
+
+retry:
+  enabled: true
+  times: 3
+  http_codes: [500, 502, 503, 504, 408, 429]
+
+proxy:
+  enabled: false
+  servers: []
+
+user_agents:
+  enabled: true
+  agents:
+    - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+    - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    - "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    - "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0"
+    - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15"
+
+schedule:
+  cron: "0 7 * * *"
+  timeout: 3
+  default_max_pages: 5

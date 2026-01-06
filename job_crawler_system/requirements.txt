@@ -1,0 +1,102 @@
+# Core Web Scraping
+scrapy>=2.11.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+requests>=2.31.0
+
+# Database
+pymongo>=4.6.0
+motor>=3.3.0
+
+# Workflow Management (Optional - can be installed separately if needed)
+# apache-airflow>=2.10.0
+# apache-airflow-providers-mongo>=5.2.0
+
+# Data Processing
+pandas>=2.1.0
+numpy>=1.26.0
+
+# AI/ML - Skill Extraction
+spacy>=3.7.0
+huggingface-hub>=0.20.0
+openai>=1.0.0
+
+# Utilities
+pyyaml>=6.0
+python-dotenv>=1.0.0
+arrow>=1.3.0
+
+# Logging & Monitoring
+colorlog>=4.0.2
+python-json-logger>=2.0.0
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+
+# Code Quality
+black==23.12.1
+flake8==7.0.0
+pylint==3.0.3
+
+# Type Checking
+mypy==1.7.1
+types-PyYAML==6.0.12.12
+types-requests==2.31.0.10
+
+# Development Tools
+ipython==8.19.0
+ipdb==0.13.13
+
+# HTTP Client
+httpx==0.25.2
+aiohttp==3.9.1
+brotli>=1.1.0
+# scrapy
+
+# Parser & Selectors
+parsel==1.8.1
+cssselect==1.2.0
+
+# Date & Time
+python-dateutil==2.8.2
+pytz==2023.3
+
+# Environment & Config
+environs==10.0.0
+
+# Retry & Rate Limiting
+tenacity==8.2.3
+ratelimit==2.2.1
+
+# Job Queue (Optional)
+celery==5.3.4
+redis==5.0.1
+
+# API Framework (if needed)
+fastapi==0.108.0
+uvicorn==0.25.0
+pydantic==2.5.3
+
+# Data Validation
+jsonschema==4.20.0
+validators==0.22.0
+
+# HTML Parsing
+html5lib==1.1
+selectolax==0.3.17
+
+# Proxy & User-Agent Management
+fake-useragent==1.4.0
+python-socks==2.4.3
+
+# Performance
+ujson==5.9.0
+orjson==3.9.10
+
+# Monitoring
+prometheus-client==0.19.0
+
+# Security
+cryptography==41.0.7

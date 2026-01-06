@@ -1,0 +1,105 @@
+x-airflow-common:
+  &airflow-common
+  image: job-crawler-airflow:latest
+  build:
+    context: .
+    dockerfile: docker/airflow/Dockerfile
+  env_file:
+    - docker/airflow/.env
+  environment:
+    &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__WEBSERVER__RBAC: "True"
+    AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: UTC
+    CRAWLER_HOME: /opt/airflow/jobs/job_crawler_system
+    # MongoDB connection variables
+    MONGO_URI: http://localhost:27018/
+    MONGO_DATABASE: job_crawler_db
+    # Qdrant connection variables
+    QDRANT_HOST: qdrant
+    QDRANT_PORT: 6333
+    QDRANT_COLLECTION: job_descriptions
+    # OpenAI API for skill extraction
+    OPENAI_API_KEY: sk-up7se1KpxO2Br0GG_JnCCA
+    OPENAI_BASE_URL: http://192.168.10.211:37417/v1
+    OPENAI_MODEL: mistral/pixtral-12b-2409
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+    - ./src:/opt/airflow/jobs/job_crawler_system/src
+    - ./scripts:/opt/airflow/jobs/job_crawler_system/scripts
+    - ./config:/opt/airflow/jobs/job_crawler_system/config
+    - ./config/rate_limiting.fast.yaml:/opt/airflow/jobs/job_crawler_system/config/rate_limiting.yaml:ro
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    postgres:
+      condition: service_healthy
+    mongo:
+      condition: service_healthy
+    qdrant:
+      condition: service_started
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - pgdata-airflow:/var/lib/postgresql/data
+
+  mongo:
+    image: mongo:7.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_DATABASE: job_crawler_db
+    ports:
+      - "27018:6868"
+    command: --port 6868
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "6868", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - mongodata:/data/db
+      - ./docker/mongo/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+
+  qdrant:
+    image: qdrant/qdrant:v1.9.3
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command: -c "airflow db migrate && airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true"
+
+  scheduler:
+    <<: *airflow-common
+    command: scheduler
+
+  webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8081:8080"
+
+
+volumes:
+  pgdata-airflow:
+  mongodata:
+  qdrant_data:

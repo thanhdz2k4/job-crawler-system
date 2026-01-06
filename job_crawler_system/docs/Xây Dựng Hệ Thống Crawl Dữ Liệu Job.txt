@@ -1,0 +1,453 @@
+﻿Báo cáo Kiến trúc Hệ thống Thu thập Dữ liệu Tuyển dụng Quy mô lớn: Tích hợp Python, Apache Airflow và MongoDB
+Gemini
+
+
+
+
+Tóm tắt Điều hành
+
+
+Trong bối cảnh thị trường lao động số hóa ngày càng phức tạp, nhu cầu tổng hợp và phân tích dữ liệu tuyển dụng từ các nền tảng trực tuyến như TopCV đang trở thành yêu cầu cấp thiết cho các doanh nghiệp nhân sự và các nhà nghiên cứu thị trường. Tuy nhiên, việc xây dựng một hệ thống thu thập dữ liệu (web crawling) bền vững đối mặt với nhiều thách thức kỹ thuật: sự thay đổi liên tục của cấu trúc HTML, các cơ chế chống bot ngày càng tinh vi như Cloudflare Turnstile, và yêu cầu về tính toàn vẹn dữ liệu lịch sử. Báo cáo này trình bày một thiết kế kiến trúc toàn diện cho hệ thống ETL (Extract, Transform, Load) phi tập trung, sử dụng Python làm ngôn ngữ lập trình cốt lõi, Apache Airflow để điều phối quy trình làm việc (workflow orchestration), và MongoDB để lưu trữ dữ liệu phi cấu trúc.
+Phân tích đi sâu vào việc chuyển đổi từ các script đơn lẻ sang kiến trúc container hóa sử dụng Docker, đảm bảo tính cô lập và khả năng mở rộng. Đặc biệt, báo cáo tập trung vào chiến lược "Schema-on-Read" của MongoDB để xử lý sự đa dạng của dữ liệu tuyển dụng, cùng với mô hình "Document Versioning" để theo dõi lịch sử thay đổi của tin đăng. Các giải pháp kỹ thuật để vượt qua rào cản bảo mật của TopCV, tối ưu hóa hiệu suất thu thập thông qua Scrapy và Playwright, cũng như quy trình CI/CD cho dữ liệu cũng được mổ xẻ chi tiết.1
+
+
+1. Cơ sở Lý luận và Kiến trúc Hệ thống
+
+
+
+
+1.1 Sự Dịch chuyển từ Thu thập Đơn lẻ sang Hệ thống Phân tán
+
+
+Các dự án thu thập dữ liệu thường bắt đầu bằng các đoạn mã Python đơn giản chạy trên một máy cục bộ. Tuy nhiên, khi quy mô dữ liệu tăng lên hàng triệu bản ghi hoặc cần thu thập từ nhiều nguồn khác nhau (TopCV, VietnamWorks, LinkedIn), kiến trúc đơn nhân (single-node) bộc lộ những điểm yếu chí tử: tắc nghẽn về băng thông mạng, giới hạn CPU khi xử lý JavaScript, và rủi ro mất dữ liệu khi quy trình bị gián đoạn.2
+Để giải quyết vấn đề này, kiến trúc đề xuất áp dụng mô hình Distributed Web Crawling (Thu thập dữ liệu phân tán). Trong mô hình này, trách nhiệm được phân tách rõ ràng:
+* Thành phần Điều phối (Orchestrator): Apache Airflow đóng vai trò là "nhạc trưởng", chịu trách nhiệm lên lịch, quản lý sự phụ thuộc giữa các tác vụ (tasks), và xử lý các kịch bản lỗi (retries/alerts). Airflow không trực tiếp thực hiện việc tải dữ liệu mà chỉ kích hoạt các worker.1
+* Thành phần Thực thi (Executor): Các container Docker chứa mã nguồn crawler (Scrapy hoặc Playwright) được khởi tạo động. Việc sử dụng container đảm bảo môi trường thực thi nhất quán, tránh xung đột thư viện giữa các crawler khác nhau.6
+* Thành phần Lưu trữ (Storage): MongoDB đóng vai trò là "Data Lake" lưu trữ dữ liệu thô (raw data). Khả năng mở rộng ngang (sharding) và mô hình dữ liệu linh hoạt (flexible schema) của MongoDB là yếu tố then chốt để xử lý cấu trúc không đồng nhất của tin tuyển dụng.4
+
+
+1.2 So sánh Chiến lược ETL và ELT trong Bối cảnh Scraping
+
+
+Truyền thống, các hệ thống kho dữ liệu sử dụng quy trình ETL (Extract - Transform - Load), trong đó dữ liệu được làm sạch và chuẩn hóa trước khi lưu vào cơ sở dữ liệu. Tuy nhiên, đối với dữ liệu web có tính biến động cao, báo cáo khuyến nghị áp dụng quy trình ELT (Extract - Load - Transform).
+Lý do cốt lõi cho sự lựa chọn này nằm ở tính chất không ổn định của các website nguồn. Nếu một trang web thay đổi cấu trúc HTML, quy trình trích xuất (Transform) có thể bị lỗi. Nếu sử dụng ETL, dữ liệu thô sẽ bị mất. Ngược lại, với ELT, toàn bộ mã nguồn HTML hoặc phản hồi JSON thô được lưu trữ vào MongoDB trước (Load). Việc trích xuất thông tin (parsing) có thể được thực hiện sau đó hoặc thực hiện lại (re-process) bất cứ lúc nào mà không cần phải thực hiện lại việc thu thập tốn kém tài nguyên mạng.3
+
+
+1.3 Vai trò của Containerization (Docker)
+
+
+Sự tích hợp giữa Airflow và Docker thông qua DockerOperator là một thành phần quan trọng trong thiết kế này. Thay vì cài đặt hàng chục thư viện Python (như selenium, playwright, pandas, lxml) trực tiếp lên máy chủ chạy Airflow - điều dễ dẫn đến xung đột phiên bản ("dependency hell") - mỗi crawler được đóng gói trong một Docker image riêng biệt.
+Airflow sẽ gửi lệnh tới Docker daemon để khởi chạy container, thực thi tác vụ thu thập, và tự động hủy container khi hoàn tất. Điều này không chỉ giúp hệ thống sạch sẽ mà còn cho phép phân bổ tài nguyên (CPU/RAM) cụ thể cho từng tác vụ thu thập, ngăn chặn việc một crawler tiêu tốn quá nhiều tài nguyên làm ảnh hưởng đến toàn bộ hệ thống.6
+
+
+2. Phân tích Đối tượng Mục tiêu: TopCV.vn
+
+
+Việc xây dựng crawler hiệu quả đòi hỏi sự hiểu biết sâu sắc về đối tượng mục tiêu. TopCV là một nền tảng tuyển dụng hiện đại, sử dụng nhiều kỹ thuật để tối ưu trải nghiệm người dùng và bảo vệ dữ liệu.
+
+
+2.1 Phân tích Kỹ thuật Chống Bot (Anti-Bot Mechanisms)
+
+
+Một trong những rào cản lớn nhất khi thu thập dữ liệu từ TopCV là hệ thống bảo vệ của Cloudflare. Khi truy cập trang web, đặc biệt là các trang chi tiết công việc hoặc khi tần suất truy cập cao, Cloudflare sẽ kích hoạt các cơ chế kiểm tra để phân biệt giữa người dùng thật và bot.12
+Bảng 1: Các cấp độ bảo vệ của Cloudflare và Tác động đến Crawler
+
+
+Cơ chế Bảo vệ
+	Mô tả Kỹ thuật
+	Tác động đến Python Requests/Scrapy
+	Chiến lược Vượt qua
+	TLS Fingerprinting
+	Phân tích "dấu vân tay" của giao thức TLS (cipher suites, extensions) để xác định client.
+	Thư viện requests của Python có dấu vân tay TLS đặc trưng, dễ bị phát hiện và chặn (403 Forbidden).
+	Sử dụng các thư viện giả lập trình duyệt như curl-impersonate hoặc tích hợp middleware tùy chỉnh trong Scrapy.12
+	JavaScript Challenges
+	Yêu cầu trình duyệt thực thi một đoạn mã JS để chứng minh khả năng render (ví dụ: Turnstile).
+	Scrapy mặc định không thực thi JS, dẫn đến việc không vượt qua được bước kiểm tra này.
+	Tích hợp Playwright hoặc Selenium để xử lý JS, hoặc sử dụng dịch vụ giải CAPTCHA bên thứ ba.15
+	IP Reputation
+	Chặn các địa chỉ IP thuộc dải IP của Data Center (AWS, Google Cloud).
+	Crawler chạy trên server đám mây sẽ bị chặn ngay lập tức.
+	Sử dụng mạng lưới Residential Proxies (Proxy dân cư) để xoay vòng IP liên tục.2
+	Đối với TopCV, việc sử dụng Scrapy thuần túy có thể gặp khó khăn ở các bước xác thực ban đầu. Do đó, kiến trúc đề xuất sử dụng phương pháp lai (Hybrid Approach): sử dụng Playwright để vượt qua các thách thức của Cloudflare và lấy cookies xác thực, sau đó chuyển cookies này cho Scrapy để thực hiện việc thu thập dữ liệu tốc độ cao.17
+
+
+2.2 Cấu trúc URL và Chiến lược Phân trang (Pagination)
+
+
+TopCV sử dụng cấu trúc URL phân cấp và tham số truy vấn để quản lý danh sách việc làm. Hiểu rõ cấu trúc này giúp tối ưu hóa quy trình thu thập, tránh việc phải duyệt qua toàn bộ cây DOM.19
+* URL Cơ sở: https://www.topcv.vn/tim-viec-lam-moi-nhat
+* Cơ chế Phân trang: TopCV sử dụng tham số page trên URL, ví dụ: ?page=1, ?page=2.
+* Chiến lược Thu thập:
+   1. Crawler sẽ bắt đầu từ trang 1, trích xuất tổng số trang từ thành phần phân trang (pagination component) trong HTML.21
+   2. Tạo danh sách các URL cần thu thập dựa trên tổng số trang (URL Frontier).
+   3. Để đảm bảo tính cập nhật, hệ thống cần kiểm tra ngày đăng của công việc. Nếu gặp một công việc có ngày đăng cũ hơn ngày chạy crawler lần trước, quy trình có thể dừng lại để tiết kiệm tài nguyên (Incremental Crawling).19
+Phân tích tập tin robots.txt của TopCV 23 cho thấy họ cấm (Disallow) các đường dẫn liên quan đến tài khoản cá nhân (/cv-ung-vien/, /sua-cv/) nhưng cho phép truy cập vào các trang việc làm công khai. Tuy nhiên, crawler cần tuân thủ đạo đức nghề nghiệp bằng cách thiết lập DOWNLOAD_DELAY (độ trễ giữa các request) để không gây quá tải cho máy chủ mục tiêu.24
+
+
+2.3 Phân tích Cấu trúc HTML (DOM Structure)
+
+
+Dữ liệu trên TopCV được render kết hợp giữa Server-Side Rendering (SSR) cho danh sách cơ bản và Client-Side Rendering (CSR) cho một số thông tin chi tiết.
+* Danh sách việc làm: Thường nằm trong các thẻ div có class như job-list-search-result hoặc job-item. Mỗi mục chứa tiêu đề, tên công ty, mức lương (thường ở dạng text như "10-15 triệu"), và địa điểm.21
+* Chi tiết công việc: Nằm trong trang riêng, chứa mô tả chi tiết (Description) và yêu cầu (Requirements). Các phần này thường nằm trong các thẻ div có ID hoặc class cụ thể. Tuy nhiên, tên class có thể bị obfuscate (làm rối) hoặc thay đổi theo thời gian, do đó việc sử dụng XPath tương đối hoặc CSS Selectors dựa trên cấu trúc thay vì tên class cứng nhắc là cần thiết.22
+
+
+3. Thiết kế Cấu trúc Dự án Python
+
+
+Một dự án Python chuyên nghiệp cho hệ thống crawler cần tuân thủ các nguyên tắc về đóng gói (packaging), tách biệt mối quan tâm (separation of concerns) và quản lý cấu hình. Cấu trúc thư mục sau đây được thiết kế để hỗ trợ khả năng mở rộng khi thêm các nguồn dữ liệu mới (ví dụ: VietnamWorks, Indeed) mà không phá vỡ logic hiện tại.27
+
+
+3.1 Sơ đồ Cấu trúc Thư mục
+
+
+job_crawler_system/
+├── config/ # Quản lý cấu hình tập trung
+│ ├── init.py
+│ ├── settings.yaml # Cấu hình chung (timeouts, retries, concurrency)
+│ └── connections.py # Factory tạo kết nối Database
+├── dags/ # Định nghĩa Airflow DAGs
+│ ├── init.py
+│ ├── job_crawler_dag.py # DAG chính điều phối việc thu thập
+│ └── maintenance_dag.py # DAG bảo trì (xoá log, tối ưu DB)
+├── docker/ # Cấu hình Docker cho các service
+│ ├── airflow/
+│ │ └── Dockerfile # Image tùy chỉnh cho Airflow
+│ └── scraper/
+│ ├── Dockerfile # Image chứa Scrapy/Playwright
+│ └── entrypoint.sh # Script khởi chạy crawler
+├── src/ # Mã nguồn ứng dụng chính (Crawler Logic)
+│ ├── init.py
+│ ├── crawlers/ # Package chứa các Spiders
+│ │ ├── init.py
+│ │ ├── common/ # Các module dùng chung
+│ │ │ ├── middlewares.py # Proxy, User-Agent rotation
+│ │ │ └── pipelines.py # Pipeline lưu dữ liệu vào MongoDB
+│ │ ├── topcv/ # Logic riêng cho TopCV
+│ │ │ ├── init.py
+│ │ │ ├── spider.py # Scrapy Spider
+│ │ │ ├── items.py # Định nghĩa cấu trúc dữ liệu đầu ra
+│ │ │ └── parsers.py # Hàm xử lý HTML/Text cleaning
+│ │ └── vietnamworks/ # Logic cho nguồn khác (mở rộng sau này)
+│ └── utils/ # Các tiện ích hỗ trợ
+│ └── database.py # Wrapper cho PyMongo
+├── tests/ # Unit và Integration Tests
+├── requirements.txt # Danh sách thư viện Python
+├── docker-compose.yaml # Định nghĩa toàn bộ stack (Airflow + Mongo + Networks)
+└──.env # Biến môi trường (Secrets)
+
+
+3.2 Phân tích Các Thành phần Cốt lõi
+
+
+1. Module src/crawlers/topcv/items.py:
+Thay vì sử dụng các từ điển (dict) Python tự do, việc định nghĩa Item trong Scrapy giúp chuẩn hóa dữ liệu ngay từ đầu vào. Điều này tạo ra một lớp hợp đồng dữ liệu (data contract) giữa crawler và database.29
+
+
+Python
+
+
+
+
+import scrapy
+
+class JobItem(scrapy.Item):
+   url = scrapy.Field()
+   title = scrapy.Field()
+   company = scrapy.Field()
+   salary_raw = scrapy.Field()
+   location = scrapy.Field()
+   posted_date = scrapy.Field()
+   deadline = scrapy.Field()
+   raw_html = scrapy.Field()      # Lưu trữ HTML thô để parse lại sau này
+   content_hash = scrapy.Field()  # Dùng để kiểm tra trùng lặp nội dung
+   source = scrapy.Field()
+   crawl_timestamp = scrapy.Field()
+
+2. Module src/crawlers/common/pipelines.py:
+Đây là nơi thực hiện logic kết nối với MongoDB. Pipeline này cần xử lý logic "Upsert" (Update or Insert) để đảm bảo tính Idempotency (tính lũy đẳng - chạy nhiều lần không gây trùng lặp dữ liệu). Nếu một URL đã tồn tại, hệ thống sẽ cập nhật bản ghi thay vì tạo mới.31
+3. Thư mục docker/:
+Việc tách biệt Dockerfile cho Airflow và Scraper là tối quan trọng. Airflow cần các thư viện để điều phối (như apache-airflow-providers-docker), trong khi Scraper cần các thư viện nặng về xử lý web (như trình duyệt Chromium cho Playwright). Gộp chung vào một image sẽ làm image quá khổ và khó quản lý.6
+
+
+4. Thiết kế Schema và Mô hình Dữ liệu MongoDB
+
+
+Lựa chọn MongoDB thay vì cơ sở dữ liệu quan hệ (RDBMS) như MySQL hay PostgreSQL xuất phát từ tính chất đa dạng và phi cấu trúc của dữ liệu tuyển dụng. Mỗi trang web tuyển dụng có một tập hợp các trường thông tin khác nhau (ví dụ: TopCV có "Cấp bậc", LinkedIn có "Seniority Level").
+
+
+4.1 Chiến lược "Schema-on-Read" cho Dữ liệu Thô
+
+
+Bộ sưu tập (Collection) chính job_postings_raw được thiết kế để lưu trữ dữ liệu ở dạng nguyên bản nhất có thể. Schema validation của MongoDB có thể được sử dụng nhưng không nên quá chặt chẽ ở giai đoạn này.4
+Cấu trúc Document Mẫu (JSON/BSON):
+
+
+JSON
+
+
+
+
+{
+ "_id": ObjectId("653a1b2c..."),
+ "url": "https://www.topcv.vn/viec-lam/senior-python-dev/12345",
+ "source": "topcv",
+ "crawl_timestamp": ISODate("2023-10-27T08:00:00Z"),
+ "content_hash": "e5d4c3b2a1...", 
+ "http_status": 200,
+ "raw_data": {
+   "title": "Senior Python Developer",
+   "company": "Tech Corp",
+   "salary_text": "Up to $3000",
+   "html_body": "<html>...</html>" // Lưu trữ toàn bộ nội dung HTML
+ },
+ "parsed_fields": { // Các trường đã trích xuất sơ bộ
+   "location":,
+   "skills":
+ },
+ "metadata": {
+   "version": 1,
+   "is_active": true
+ }
+}
+
+Điểm đặc biệt trong thiết kế này là trường raw_data.html_body. Bằng cách lưu trữ HTML gốc, hệ thống cho phép đội ngũ kỹ sư dữ liệu (Data Engineers) thay đổi logic trích xuất (parsing logic) trong tương lai và áp dụng lại lên dữ liệu lịch sử mà không cần phải thu thập lại từ nguồn.3
+
+
+4.2 Mô hình Document Versioning (Quản lý Phiên bản)
+
+
+Tin tuyển dụng thay đổi theo thời gian (ví dụ: cập nhật mức lương, thay đổi hạn nộp hồ sơ). Nếu chỉ ghi đè dữ liệu cũ, chúng ta sẽ mất đi thông tin lịch sử quý giá cho việc phân tích xu hướng. Báo cáo đề xuất áp dụng Document Versioning Pattern.35
+Quy trình xử lý khi thu thập một URL đã tồn tại:
+1. Tính toán mã băm (Hash MD5/SHA256) của nội dung mới thu thập (dựa trên tiêu đề, mô tả, lương).
+2. So sánh với mã băm của document hiện tại trong DB.
+3. Nếu mã băm khác nhau (có sự thay đổi):
+   * Sao chép document hiện tại vào collection job_postings_history.
+   * Cập nhật document trong job_postings_raw với dữ liệu mới.
+   * Tăng giá trị trường metadata.version lên 1.
+   * Cập nhật crawl_timestamp.
+4. Nếu mã băm giống nhau:
+   * Chỉ cập nhật trường last_seen_timestamp để xác nhận tin vẫn còn tồn tại.
+Giải pháp này cân bằng giữa hiệu suất truy vấn (luôn lấy được bản ghi mới nhất từ collection chính) và khả năng kiểm toán dữ liệu (audit trail).35
+
+
+4.3 Chiến lược Đánh Index (Indexing Strategy)
+
+
+Để hỗ trợ hiệu suất cho cả quá trình ghi (Write) của crawler và quá trình đọc (Read) của API/Dashboard, các index sau là bắt buộc 39:
+* Unique Compound Index: { "url": 1, "source": 1 } - Đảm bảo tính duy nhất của mỗi tin tuyển dụng trên mỗi nguồn.
+* Time-To-Live (TTL) Index (Tùy chọn): Có thể áp dụng cho các bản ghi log hoặc dữ liệu tạm, nhưng không áp dụng cho dữ liệu tin tuyển dụng chính.
+* Text Index: { "raw_data.title": "text", "raw_data.company": "text" } - Hỗ trợ tìm kiếm full-text cơ bản.
+* Hashed Index: { "content_hash": 1 } - Tối ưu hóa tốc độ so sánh để phát hiện thay đổi nội dung.
+
+
+5. Điều phối Quy trình với Apache Airflow
+
+
+Airflow chuyển đổi các đoạn mã rời rạc thành một quy trình công việc (workflow) có trật tự, có khả năng giám sát và tự phục hồi.
+
+
+5.1 Thiết kế DAG (Directed Acyclic Graph)
+
+
+DAG (Đồ thị không chu trình có hướng) định nghĩa trình tự thực hiện các tác vụ. Đối với hệ thống crawler, một DAG tiêu chuẩn bao gồm các bước sau 41:
+1. Start: Điểm bắt đầu của quy trình.
+2. Check_Target_Availability: (Tùy chọn) Ping tới TopCV để đảm bảo site đang hoạt động.
+3. Run_Crawler_Container: Tác vụ chính, sử dụng DockerOperator để chạy image chứa Scrapy.
+4. Quality_Check: Kiểm tra số lượng bản ghi thu thập được. Nếu bằng 0, gửi cảnh báo (Alert) qua Email/Slack.
+5. End: Kết thúc quy trình.
+
+
+5.2 Sử dụng DockerOperator cho Môi trường Cô lập
+
+
+Sử dụng DockerOperator là thực hành tốt nhất (best practice) để chạy các tác vụ có sự phụ thuộc phức tạp như Web Scraping. Nó cho phép Airflow (chạy trên môi trường A) kích hoạt một container (môi trường B) để thực thi lệnh, sau đó thu hồi kết quả.6
+Mẫu Code định nghĩa Task trong Airflow:
+
+
+Python
+
+
+
+
+from airflow import DAG
+from airflow.providers.docker.operators.docker import DockerOperator
+from datetime import datetime, timedelta
+
+default_args = {
+   'owner': 'data_engineer',
+   'retries': 3,
+   'retry_delay': timedelta(minutes=5),
+   'email_on_failure': True
+}
+
+with DAG(
+   'topcv_crawler_v1',
+   default_args=default_args,
+   schedule_interval='0 7 * * *', # Chạy lúc 7h sáng hàng ngày
+   start_date=datetime(2023, 10, 1),
+   catchup=False, # Không chạy lại các ngày trong quá khứ khi mới deploy
+) as dag:
+
+   crawl_task = DockerOperator(
+       task_id='scrape_topcv',
+       image='my_crawler_image:latest', # Image đã build từ docker/scraper/Dockerfile
+       api_version='auto',
+       auto_remove=True, # Tự động xóa container sau khi chạy xong
+       command='scrapy crawl topcv_spider', # Lệnh thực thi bên trong container
+       docker_url='unix://var/run/docker.sock',
+       network_mode='job_crawler_network', # Kết nối cùng mạng với MongoDB Container
+       environment={
+           'MONGO_URI': 'mongodb://mongo_service:27017',
+           'LOG_LEVEL': 'INFO'
+       },
+       mount_tmp_dir=False
+   )
+
+
+
+5.3 Xử lý Idempotency và Backfilling
+
+
+Trong Airflow, khái niệm Idempotency (tính lũy đẳng) là cực kỳ quan trọng. Nếu DAG chạy lại (rerun) cho ngày hôm qua, nó không được tạo ra dữ liệu trùng lặp. Điều này được đảm bảo bởi logic "Upsert" đã thiết kế trong MongoDB Pipeline (Mục 3.2).44
+Khả năng Backfilling (chạy bù) của Airflow cho phép người dùng thu thập dữ liệu cho các khoảng thời gian trong quá khứ (nếu nguồn dữ liệu hỗ trợ truy cập lịch sử). Tuy nhiên, với web scraping, dữ liệu thường là "real-time" (thời gian thực). Do đó, tham số catchup=False thường được sử dụng để tránh việc Airflow kích hoạt hàng loạt tác vụ thu thập vô nghĩa cho những ngày đã qua mà dữ liệu trên web không còn tồn tại.1
+
+
+6. Triển khai Kỹ thuật Thu thập Dữ liệu (Crawling Logic)
+
+
+
+
+6.1 Lựa chọn Công cụ: Scrapy vs. Playwright
+
+
+Dựa trên phân tích kỹ thuật 17, báo cáo đề xuất chiến lược kết hợp:
+* Sử dụng Scrapy: Cho các tác vụ duyệt danh sách (pagination) và thu thập dữ liệu từ các trang HTML tĩnh. Scrapy vượt trội về tốc độ và hiệu suất tài nguyên nhờ kiến trúc bất đồng bộ (async).
+* Sử dụng Playwright: Chỉ kích hoạt khi gặp các trang yêu cầu render JavaScript phức tạp hoặc để giải mã Cloudflare Turnstile ban đầu.
+Bảng 2: So sánh Scrapy và Playwright trong ngữ cảnh TopCV
+Tiêu chí
+	Scrapy
+	Playwright
+	Khuyến nghị
+	Tốc độ
+	Rất nhanh (Requests/s cao)
+	Chậm (phải load cả trình duyệt)
+	Dùng Scrapy làm chủ đạo.
+	Tài nguyên (RAM)
+	Thấp
+	Cao (mỗi tab là một process)
+	Dùng Playwright hạn chế.
+	Xử lý JavaScript
+	Yếu (cần Splash)
+	Xuất sắc
+	Dùng Playwright cho login/captcha.
+	Khả năng mở rộng
+	Tốt (dễ dàng scale)
+	Khó (tốn tài nguyên phần cứng)
+	Scrapy cho 90% khối lượng công việc.
+	
+
+6.2 Cấu hình Scrapy Spider cho TopCV
+
+
+Spider cần được cấu hình để bắt chước hành vi của người dùng thật. Điều này bao gồm việc xoay vòng User-Agent và quản lý Cookies.29
+
+
+Python
+
+
+
+
+# src/crawlers/topcv/spider.py
+import scrapy
+from..items import JobItem
+
+class TopCVSpider(scrapy.Spider):
+   name = 'topcv_spider'
+   allowed_domains = ['topcv.vn']
+   start_urls = ['https://www.topcv.vn/tim-viec-lam-moi-nhat']
+
+   def parse(self, response):
+       # Trích xuất danh sách việc làm
+       jobs = response.css('.job-item-search-result')
+       for job in jobs:
+           item = JobItem()
+           item['title'] = job.css('.title a::text').get()
+           item['url'] = job.css('.title a::attr(href)').get()
+           #... trích xuất các trường khác...
+           yield item
+       
+       # Logic Phân trang (Pagination)
+       next_page = response.css('.pagination.next::attr(href)').get()
+       if next_page:
+           yield response.follow(next_page, callback=self.parse)
+
+
+
+6.3 Quản lý Proxy và Bypass Cloudflare
+
+
+Để hệ thống hoạt động ổn định, không thể thiếu việc tích hợp Proxy. Scrapy-Rotate-Proxies hoặc các middleware tùy chỉnh nên được sử dụng để thay đổi IP sau mỗi N request. Ngoài ra, để vượt qua Cloudflare, có thể tích hợp scrapy-cloudflare-middleware hoặc sử dụng dịch vụ giải CAPTCHA bên ngoài (như 2Captcha) được gọi thông qua API trong quá trình crawl.16
+
+
+7. Kết luận và Khuyến nghị
+
+
+Hệ thống thu thập dữ liệu tuyển dụng được thiết kế trong báo cáo này không chỉ đơn thuần là một công cụ tải trang web, mà là một nền tảng dữ liệu (data platform) hoàn chỉnh. Bằng cách kết hợp sức mạnh điều phối của Apache Airflow, sự linh hoạt của MongoDB, và hiệu năng của Scrapy/Docker, hệ thống đạt được các mục tiêu:
+1. Tính Bền vững: Khả năng tự phục hồi sau lỗi và quản lý lịch sử dữ liệu chặt chẽ.
+2. Tính Mở rộng: Dễ dàng thêm nguồn mới hoặc tăng số lượng worker thông qua Docker.
+3. Chất lượng Dữ liệu: Lưu trữ dữ liệu thô cho phép tái xử lý, đảm bảo không mất mát thông tin.
+Các bước tiếp theo được khuyến nghị:
+* Triển khai hệ thống giám sát (Monitoring) sử dụng Prometheus và Grafana để theo dõi sức khỏe của Airflow và MongoDB.
+* Phát triển module phân tích sử dụng AI/NLP để tự động trích xuất kỹ năng (skills) và yêu cầu (requirements) từ văn bản mô tả công việc lưu trong MongoDB.
+* Thiết lập quy trình CI/CD để tự động deploy các thay đổi trong mã nguồn Crawler lên môi trường Production.
+Kiến trúc này cung cấp một nền tảng vững chắc cho bất kỳ tổ chức nào muốn khai thác dữ liệu tuyển dụng quy mô lớn tại Việt Nam, đảm bảo tuân thủ các tiêu chuẩn kỹ thuật cao nhất hiện nay.
+Works cited
+1. Architecture Overview — Airflow 3.1.3 Documentation, accessed November 19, 2025, https://airflow.apache.org/docs/apache-airflow/stable/core-concepts/overview.html
+2. Guide to Distributed Web Crawling: Scale Your Scraping - Bright Data, accessed November 19, 2025, https://brightdata.com/blog/web-data/distributed-web-crawling
+3. Setting up a large-scale scraping architecture with python | by Sia AI | Medium, accessed November 19, 2025, https://heka-ai.medium.com/setting-up-a-large-scale-scraping-architecture-with-python-3b26cb6571a6
+4. Data Modeling - Database Manual - MongoDB Docs, accessed November 19, 2025, https://www.mongodb.com/docs/manual/data-modeling/
+5. How to Build a Dynamically Scalable Web Scraping Pipeline with Apache Airflow!, accessed November 19, 2025, https://www.youtube.com/watch?v=CraPKax37lo
+6. How to use the DockerOperator from Apache Airflow - Stack Overflow, accessed November 19, 2025, https://stackoverflow.com/questions/59765453/how-to-use-the-dockeroperator-from-apache-airflow
+7. Utilizing DockerOperator in Airflow to Run Containerized Applications in Data Engineer Projects | by Rio Dwi Putra Perkasa - Medium, accessed November 19, 2025, https://medium.com/apache-airflow/utilizing-dockeroperator-in-airflow-to-run-containerized-applications-in-data-engineer-projects-f596df26ea83
+8. 6 Rules of Thumb for MongoDB Schema Design, accessed November 19, 2025, https://www.mongodb.com/company/blog/mongodb/6-rules-of-thumb-for-mongodb-schema-design
+9. Building a Scalable RSS Feed Pipeline with Apache Airflow, Kafka, and MongoDB, Flask Api | by Stefentaime | Medium, accessed November 19, 2025, https://medium.com/@stefentaime_10958/building-a-scalable-rss-feed-pipeline-with-apache-airflow-kafka-and-mongodb-flask-api-da379cc2e3fb
+10. How to Efficiently Get JSON From MongoDB Using Spring Data and Java - Medium, accessed November 19, 2025, https://medium.com/mongodb/how-to-efficiently-get-json-from-mongodb-using-spring-data-and-java-1e083f620a44
+11. Airflow DockerOperator: The Basics (and more ) - YouTube, accessed November 19, 2025, https://www.youtube.com/watch?v=MdW2ZHHJWeo
+12. Cloudflare Bot Management & Protection, accessed November 19, 2025, https://www.cloudflare.com/application-services/products/bot-management/
+13. Overview · Cloudflare bot solutions docs, accessed November 19, 2025, https://developers.cloudflare.com/bots/
+14. The State of Web Crawling in 2025: Key Statistics and Industry Benchmarks - Thunderbit, accessed November 19, 2025, https://thunderbit.com/blog/web-crawling-stats-and-industry-benchmarks
+15. Bypass Cloudflare with Playwright BQL 2025 Guide - Browserless, accessed November 19, 2025, https://www.browserless.io/blog/bypass-cloudflare-with-playwright
+16. How to Bypass Cloudflare with Playwright in 2025 - ZenRows, accessed November 19, 2025, https://www.zenrows.com/blog/playwright-cloudflare-bypass
+17. Scrapy vs. Playwright: Which to Use for Web Scraping? - Medium, accessed November 19, 2025, https://medium.com/@datajournal/scrapy-vs-playwright-4db74c4ebd95
+18. Selenium over scrapy : r/Python - Reddit, accessed November 19, 2025, https://www.reddit.com/r/Python/comments/137zeq8/selenium_over_scrapy/
+19. Mastering Pagination in Web Scraping: A Complete Guide - Medium, accessed November 19, 2025, https://medium.com/@datajournal/mastering-pagination-in-web-scraping-a-complete-guide-627c528de91c
+20. Pagination with URL path or the query parameters - Stack Overflow, accessed November 19, 2025, https://stackoverflow.com/questions/50071884/pagination-with-url-path-or-the-query-parameters
+21. From data to strategy: Implementing web crawling in tourism recruitment - International Journal of Multidisciplinary Research and Growth Evaluation www.allmultidisc, accessed November 19, 2025, https://www.allmultidisciplinaryjournal.com/uploads/archives/20240821183145_D-24-202.1.pdf
+22. Scrape thousands of small websites for job postings? : r/webscraping - Reddit, accessed November 19, 2025, https://www.reddit.com/r/webscraping/comments/1h4s1nv/scrape_thousands_of_small_websites_for_job/
+23. robots.txt - TopCV, accessed November 19, 2025, https://www.topcv.vn/robots.txt
+24. Robots.txt - What is the proper format for a Crawl Delay for multiple user agents?, accessed November 19, 2025, https://stackoverflow.com/questions/17377835/robots-txt-what-is-the-proper-format-for-a-crawl-delay-for-multiple-user-agent
+25. How Google Interprets the robots.txt Specification | Google Search Central | Documentation, accessed November 19, 2025, https://developers.google.com/search/docs/crawling-indexing/robots/robots_txt
+26. A Practical Introduction to Web Scraping in Python, accessed November 19, 2025, https://realpython.com/python-web-scraping-practical-introduction/
+27. Web Scraping and Data Visualization Pipeline with Apache Airflow | by Hiba TOUDERTI, accessed November 19, 2025, https://medium.com/@hibatouderti/web-scraping-and-data-visualization-pipeline-with-apache-airflow-71d44c75c349
+28. How do you organise a python project that contains multiple packages so that each file in a package can still be run individually? - Stack Overflow, accessed November 19, 2025, https://stackoverflow.com/questions/39528736/how-do-you-organise-a-python-project-that-contains-multiple-packages-so-that-eac
+29. Web Scraping With Scrapy and MongoDB - Real Python, accessed November 19, 2025, https://realpython.com/web-scraping-with-scrapy-and-mongodb/
+30. Python Web Scraping: Full Tutorial With Examples (2025) - ScrapingBee, accessed November 19, 2025, https://www.scrapingbee.com/blog/web-scraping-101-with-python/
+31. Writing a simple python scrapy crawler with mongodb - Stack Overflow, accessed November 19, 2025, https://stackoverflow.com/questions/44993158/writing-a-simple-python-scrapy-crawler-with-mongodb
+32. MongoDB Document Versioning. As the applications evolve and business… | by Praful Khandelwal | Medium, accessed November 19, 2025, https://medium.com/@khandelwal.praful/mongodb-document-versioning-4811819821f3
+33. D'ya like dags? Build a Scraper with Apache Airflow and Docker | by Arturo Vaine | Medium, accessed November 19, 2025, https://medium.com/@arturovaine/dya-like-dags-build-a-scraper-with-apache-airflow-and-docker-3abd4c9e7f8d
+34. JSON And BSON - MongoDB, accessed November 19, 2025, https://www.mongodb.com/resources/basics/json-and-bson
+35. Document and Schema Versioning - Database Manual - MongoDB Docs, accessed November 19, 2025, https://www.mongodb.com/docs/manual/data-modeling/design-patterns/data-versioning/
+36. Maintain Different Schema Versions - Database Manual - MongoDB Docs, accessed November 19, 2025, https://www.mongodb.com/docs/manual/data-modeling/design-patterns/data-versioning/schema-versioning/
+37. Building with Patterns: The Document Versioning Pattern - MongoDB, accessed November 19, 2025, https://www.mongodb.com/company/blog/building-with-patterns-the-document-versioning-pattern
+38. Keep a History of Document Versions - Database Manual - MongoDB Docs, accessed November 19, 2025, https://www.mongodb.com/docs/manual/data-modeling/design-patterns/data-versioning/document-versioning/
+39. Designing Your Schema - Database Manual - MongoDB Docs, accessed November 19, 2025, https://www.mongodb.com/docs/manual/data-modeling/schema-design-process/
+40. Collection level operations - PyMongo 4.15.4 documentation, accessed November 19, 2025, https://pymongo.readthedocs.io/en/stable/api/pymongo/collection.html
+41. DAG writing best practices in Apache Airflow | Astronomer Docs, accessed November 19, 2025, https://www.astronomer.io/docs/learn/dag-best-practices
+42. Using Apache Airflow to Build a Pipeline for Scraped Data - Oxylabs, accessed November 19, 2025, https://oxylabs.io/blog/building-scraping-pipeline-apache-airflow
+43. airflow.providers.docker.operators.docker — apache-airflow-providers-docker Documentation, accessed November 19, 2025, https://airflow.apache.org/docs/apache-airflow-providers-docker/stable/_api/airflow/providers/docker/operators/docker/index.html
+44. Best Practices — Airflow 3.1.3 Documentation, accessed November 19, 2025, https://airflow.apache.org/docs/apache-airflow/stable/best-practices.html
+45. Playwright vs Selenium - Scrapfly, accessed November 19, 2025, https://scrapfly.io/blog/posts/playwright-vs-selenium
+46. Scrapy vs. Selenium: A Comprehensive Guide to Choosing the Best Web Scraping Tool, accessed November 19, 2025, https://www.webscrapingapi.com/scrapy-vs-selenium
+47. How to Bypass Cloudflare With Selenium (2025 Guide) - ZenRows, accessed November 19, 2025, https://www.zenrows.com/blog/selenium-cloudflare-bypass

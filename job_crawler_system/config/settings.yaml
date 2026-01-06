@@ -1,0 +1,113 @@
+# MongoDB Configuration for Job Crawler System
+# This file contains MongoDB connection settings and collection mappings
+
+mongodb:
+  # Connection URI - will be overridden by MONGO_URI environment variable in Docker
+  uri: "mongodb://localhost:27017"
+  
+  # Database name - will be overridden by MONGO_DATABASE environment variable in Docker
+  database: "job_crawler_db"
+  
+  # Collection mappings
+  collections:
+    # Raw job postings data
+    raw_data: "job_postings_raw"
+    
+    # Historical versions of job postings
+    history: "job_postings_history"
+    
+    # Crawler logs and monitoring data
+    logs: "crawler_logs"
+  
+  # Connection pool settings
+  max_pool_size: 100
+  min_pool_size: 10
+  connection_timeout_ms: 5000
+  server_selection_timeout_ms: 5000
+  
+  # Additional MongoDB options
+  options:
+    retry_writes: true
+    retry_reads: true
+    read_preference: "primary"
+    write_concern:
+      w: "majority"
+      j: true
+
+# Qdrant Configuration for Vector Database
+qdrant:
+  # Qdrant server host
+  host: "192.168.10.211"
+  
+  # Qdrant server port (6333 for HTTP, 6334 for gRPC)
+  port: 6333
+  
+  # Collection name for job descriptions
+  collection_name: "job_descriptions"
+  
+  # Connection settings
+  timeout: 5000
+  prefer_grpc: false
+  
+  # Vector configuration
+  vector_size: 384  # Actual dimension from embedding service
+  distance: "Cosine"  # Cosine, Euclid, or Dot
+
+# Embedding Service Configuration
+embedding:
+  # Embedding service endpoint
+  base_url: "http://192.168.10.29:31113"
+  
+  # Embed endpoint path
+  embed_path: "/embed"
+  
+  # Model information
+  model: "dangvantuan/vietnamese-embedding"
+  dimension: 384
+  
+  # Request settings
+  timeout: 30000  # 30 seconds
+  max_retries: 3
+  batch_size: 32  # Maximum texts to embed in one request
+
+# Crawler Configuration
+crawler:
+  # Default settings for spiders
+  default_settings:
+    DOWNLOAD_DELAY: 2
+    CONCURRENT_REQUESTS: 8
+    ROBOTSTXT_OBEY: true
+    COOKIES_ENABLED: true
+    
+  # Pipeline configuration
+  pipelines:
+    validation:
+      enabled: true
+      priority: 100
+    cleaning:
+      enabled: true
+      priority: 200
+    mongo:
+      enabled: true
+      priority: 300
+    duplicates:
+      enabled: false
+      priority: 400
+    logging:
+      enabled: true
+      priority: 500
+    qdrant:
+      enabled: true
+      priority: 600
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+  
+  # Loggers for different components
+  loggers:
+    scrapy: "INFO"
+    pymongo: "WARNING"
+    src.crawlers: "INFO"
+    src.utils: "INFO"
