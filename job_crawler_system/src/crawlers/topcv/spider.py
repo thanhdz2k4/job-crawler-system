@@ -43,20 +43,6 @@ class TopCVSpider(scrapy.Spider):
     name = 'topcv_spider'
     allowed_domains = ['topcv.vn']
     
-    # Remove custom_settings to use global settings from settings.py
-    # This ensures consistent rate limiting across all spiders
-    # custom_settings = {
-    #     'DOWNLOAD_DELAY': 2,
-    #     'CONCURRENT_REQUESTS': 8,
-    #     'ROBOTSTXT_OBEY': True,
-    #     'COOKIES_ENABLED': True,
-    #     'ITEM_PIPELINES': {
-    #         'src.crawlers.common.pipelines.ValidationPipeline': 100,
-    #         'src.crawlers.common.pipelines.MongoPipeline': 300,
-    #     },
-    #     'ENABLE_QDRANT': True,  # Enable Qdrant sync
-    # }
-    
     def __init__(self, max_pages: int = 10, incremental: bool = True, *args, **kwargs):
         """
         Initialize spider.

@@ -1,5 +1,6 @@
 # Core Scrapy dependencies
 scrapy==2.13.4
+scrapy-playwright==0.0.33
 pymongo==4.13.0
 brotli==1.2.0
 itemadapter==0.9.0

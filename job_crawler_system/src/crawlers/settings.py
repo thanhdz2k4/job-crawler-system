@@ -17,7 +17,12 @@ sys.path.insert(0, str(project_root))
 
 BOT_NAME = "job_crawler_system"
 
-SPIDER_MODULES = ["src.crawlers.topcv", "src.crawlers.vietnamworks", "src.crawlers.common"]
+SPIDER_MODULES = [
+    "src.crawlers.topcv",
+    "src.crawlers.vietnamworks",
+    "src.crawlers.JobsGo",
+    "src.crawlers.common",
+]
 NEWSPIDER_MODULE = "src.crawlers.topcv"
 
 # Load configuration from config modules
